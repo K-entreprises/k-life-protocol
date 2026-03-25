@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.seed
+*.key
+.agent-seed
+.klife-op-seed
+dist/
