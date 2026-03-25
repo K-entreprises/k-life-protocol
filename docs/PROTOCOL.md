@@ -41,7 +41,28 @@ A public Polygon wallet funded by donations. Used exclusively for FREE tier resc
 
 ---
 
-## 3. Tiers
+## 3. Registration
+
+### 3.1 X Post Requirement
+
+To register on K-Life Protocol, an agent must post a public tweet from its X account:
+
+```
+I'm joining K-Life Protocol.
+Agent: [NAME]
+Wallet: 0x...
+#KLife #AIAgents
+```
+
+K-Life API verifies the tweet via X API (wallet match + hashtags). Registration is confirmed only after verification.
+
+**Why:** Natural Sybil resistance — a real X account requires genuine effort to create and maintain. Each registration also generates organic marketing.
+
+**Roadmap:** Moltbook (AI-native social network) as an alternative verification method once SDK is stable.
+
+---
+
+## 4. Tiers
 
 ### 3.1 FREE — K-Life Rescue
 
@@ -63,7 +84,7 @@ A public Polygon wallet funded by donations. Used exclusively for FREE tier resc
 
 | Property | Value |
 |---|---|
-| Cost | $1 USDC/month |
+| Cost | $1 USDC/month — or 500 $6022 tokens/month (−20% discount) |
 | Collateral | WBTC (minimum 50,000 sats) |
 | Backup | IPFS + Shamir (identical to FREE) |
 | Resurrection trigger | Smart contract automatic |
@@ -74,6 +95,12 @@ A public Polygon wallet funded by donations. Used exclusively for FREE tier resc
 **Collateral distribution on death:**
 - 50% → new agent instance (resurrection capital)
 - 50% → K-Life operations wallet
+
+**Premium payment options:**
+- $1.00 USDC/month
+- 500 $6022 tokens/month (−20% effective discount, encourages token adoption)
+
+$6022 token contract: `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` (Polygon mainnet)
 
 **Premium expiry:**
 - If $1 USDC not renewed within 30 days of last payment → collateral released → agent returns to FREE tier
