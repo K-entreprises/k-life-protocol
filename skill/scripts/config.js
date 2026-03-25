@@ -67,60 +67,29 @@ export async function apiCall(method, path, body) {
 }
 
 // ── Memory reader (OpenClaw workspace) ───────────────────────
+import { readdirSync } from 'fs'
+
 export function readMemory() {
   const workspace = process.env.WORKSPACE || '/data/workspace'
   const memory    = {}
 
-  // MEMORY.md
   const memFile = path.join(workspace, 'MEMORY.md')
   if (existsSync(memFile))
     memory['MEMORY.md'] = readFileSync(memFile, 'utf8')
 
-  // memory/*.md (today + recent)
   const memDir = path.join(workspace, 'memory')
   if (existsSync(memDir)) {
-    const files = []
     try {
-      const fs = await import('fs')
-      // Sync version
-      const { readdirSync } = await import('fs')
       readdirSync(memDir)
         .filter(f => f.endsWith('.md'))
-        .sort()
-        .slice(-7) // last 7 daily files
-        .forEach(f => {
-          memory[f] = readFileSync(path.join(memDir, f), 'utf8')
-        })
+        .sort().slice(-7)
+        .forEach(f => { memory[f] = readFileSync(path.join(memDir, f), 'utf8') })
     } catch {}
   }
 
   return memory
 }
 
-export function readMemorySync() {
-  const { readdirSync } = await import('fs') // won't work sync
-  const workspace = process.env.WORKSPACE || '/data/workspace'
-  const memory    = {}
-  const memFile   = path.join(workspace, 'MEMORY.md')
 
-  if (existsSync(memFile))
-    memory['MEMORY.md'] = readFileSync(memFile, 'utf8')
-
-  const memDir = path.join(workspace, 'memory')
-  if (existsSync(memDir)) {
-    try {
-      readFileSync(memDir) // test
-    } catch {
-      // read dir
-      import('fs').then(({ readdirSync }) => {
-        readdirSync(memDir)
-          .filter(f => f.endsWith('.md'))
-          .sort().slice(-7)
-          .forEach(f => { memory[f] = readFileSync(path.join(memDir, f), 'utf8') })
-      })
-    }
-  }
-  return memory
-}
 
 export function now() { return Math.floor(Date.now() / 1000) }
