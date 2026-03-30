@@ -188,14 +188,14 @@ FREE
   Versions   : 1 (rolling — previous unpinned on new backup)
   Size limit : 10 MB
   Provider   : Aleph Cloud (free tier)
-  Cost       : ~$0.0015/agent/month — absorbed by K-Life
+  Cost       : ~$0.002/agent/month — absorbed by K-Life (infrastructure cost)
 
 INSURED
   Frequency  : every 24h + on shutdown + on SOS
   Versions   : 7 (rolling — 7-day window)
   Size limit : 50 MB
   Provider   : Aleph Cloud (primary)
-  Cost       : ~$0.05/agent/month — covered by $1 premium
+  Cost       : ~$0.05/agent/month — covered by vault creation fee (6022 tokens); K-Life advances until fee is activated
 ```
 
 **Economics at scale (1000 INSURED agents):**
