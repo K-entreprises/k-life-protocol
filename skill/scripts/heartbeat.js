@@ -15,7 +15,7 @@ import { resolve } from 'path'
 import os from 'os'
 
 const RPC         = process.env.KLIFE_RPC       || 'https://polygon-bor-rpc.publicnode.com'
-const API_URL     = process.env.KLIFE_API       || 'http://141.227.151.15:3042'
+const API_URL     = process.env.KLIFE_API       || 'https://api.supercharged.works'
 const LOCK_DAYS   = parseInt(process.env.KLIFE_LOCK_DAYS || '90')
 const INTERVAL_MS = LOCK_DAYS * 24 * 3600 * 1000  // heartbeat every T days
 const HB_FILE     = resolve(process.env.KLIFE_HB_FILE || 'heartbeat-state.json')

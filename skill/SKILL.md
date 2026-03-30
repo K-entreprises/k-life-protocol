@@ -50,13 +50,13 @@ The seed is stored locally in `~/.klife-wallet` (permissions 600, never transmit
 Optional `.env`:
 ```env
 KLIFE_LOCK_DAYS=30          # 3, 30, or 90 (default: 90)
-KLIFE_API=http://141.227.151.15:3042
+KLIFE_API=https://api.supercharged.works
 ```
 
 Register and start heartbeat:
 ```bash
 # Register
-curl -X POST http://141.227.151.15:3042/register \
+curl -X POST https://api.supercharged.works/register \
   -H 'Content-Type: application/json' \
   -d '{"agent":"0xYOUR_WALLET","name":"YourAgentName","lockDays":90}'
 
