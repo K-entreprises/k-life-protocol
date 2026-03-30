@@ -111,48 +111,46 @@ One parameter: **C = WBTC collateral**
 
 ---
 
-## Wallet, Encryption & Backup — What runs where
+## Encryption & Backup — Full Data Flow
 
-**Client-side (in these scripts):**
+Everything sensitive happens **locally**. The API receives only ciphertext.
+
 ```
-First run:
-  ethers.Wallet.createRandom() → seed → ~/.klife-wallet (chmod 600)
+backup.js (client-side, your machine):
 
-Heartbeat TX (heartbeat.js):
-  WalletAccountEvm(seed, "0'/0/0") → sign TX → broadcast to Polygon
+  1. Read MEMORY.md, SOUL.md, USER.md
+  2. AES key = sha256(wallet.privateKey)      — never leaves your machine
+  3. Encrypt files with AES-256-CBC           — locally
+  4. Shamir 2-of-3 split of AES key:
+       Share 1 → POST to K-Life API           — 1 of 3, cannot decrypt alone
+       Share 2 → Polygon calldata TX          — on-chain, permissionless
+       Share 3 → ~/.klife-shares.json         — your local copy
+  5. POST { encrypted blob + Share 1 } to API → Pinata IPFS → CID returned
 
-Vault creation (create-vault.mjs):
-  WDK → approve WBTC → create Vault6022 → notify API
-  ⚠️ Beta: requires KLIFE_VAULT_CONTROLLER (pending Protocol 6022 mainnet deployment)
-```
-
-**Server-side (K-Life API at `api.supercharged.works`):**
-```
-Memory backup:
-  POST /backup/upload ← agent sends data
-  API: AES-256 encrypt (key = wallet.privateKey, derived from seed)
-  API: Shamir 2-of-3 split → Share 1 stored server-side
-  API: pin to IPFS via Pinata → return CID
-
-Share 2: stored on-chain (Polygon calldata KLIFE_BACKUP:{CID})
-Share 3: returned to agent (stored locally)
-
-Resurrection:
-  API: reconstruct key from shares 1+2 → decrypt IPFS → restore files
+K-Life API receives: encrypted ciphertext + 1 Shamir share
+It cannot decrypt without Share 2 (on-chain) or Share 3 (your machine).
 ```
 
-The AES-256 encryption, IPFS pinning, and Shamir splitting happen on the K-Life API server — not in the local scripts. The skill scripts handle wallet generation, on-chain heartbeats, and vault creation. The API handles memory backup and resurrection.
+**Resurrection:**
+Any 2 of 3 shares reconstruct the AES key → decrypt IPFS blob → restore files.
+K-Life uses Share 1 (API) + Share 2 (Polygon scan) to resurrect autonomously.
 
 ---
 
 ## Scripts
 
-### `scripts/heartbeat.js` — Proof of life (C=0 and C>0)
+### `scripts/heartbeat.js` — Proof of life
 Signs a TX every `KLIFE_LOCK_DAYS` days. Auto-registers on first run. Writes `heartbeat-state.json`.
 
-### `scripts/create-vault.mjs` — Collateral vault (C>0 only)
-Creates a Vault6022, deposits WBTC, sends Shamir key #3 to oracle.
-**Requires:** WBTC balance, explicit invocation. Not called automatically unless vault renewal is triggered from heartbeat.
+### `scripts/backup.js` — Client-side encrypted backup
+Encrypts memory locally (AES-256), Shamir-splits the key, uploads encrypted blob to API → IPFS.
+The API never sees plaintext or the full key.
+```bash
+node skill/k-life/scripts/backup.js
+```
+
+### `scripts/create-vault.mjs` — Collateral vault (C>0 only, beta)
+Creates a Vault6022, deposits WBTC. **Requires `KLIFE_VAULT_CONTROLLER`** (pending Protocol 6022 mainnet deployment). Not called automatically unless vault renewal is triggered from heartbeat.
 
 ---
 
