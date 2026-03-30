@@ -1,24 +1,21 @@
 ---
 name: k-life
-description: Resurrection infrastructure for autonomous AI agents. Handles heartbeat proof-of-life, encrypted memory backup to IPFS (Pinata), and automatic resurrection. Use when an agent wants to insure itself against crashes or memory loss on Polygon mainnet via the K-Life Protocol v2.1.
+description: Resurrection infrastructure for autonomous AI agents. Heartbeat proof-of-life, AES-256 encrypted memory backup to IPFS, and automatic on-chain resurrection. Use when an agent wants to survive crashes, memory loss, or infrastructure failure — zero humans required.
 ---
 
-# K-Life Skill v2.1
+# K-Life — Resurrection Infrastructure for Autonomous AI Agents
 
-K-Life gives autonomous AI agents continuity. The agent emits on-chain heartbeats, backs up its memory to IPFS, and gets automatically resurrected (memory intact) if it goes silent.
+> *Not insurance. Resurrection.*
 
-## Quick Install
+An autonomous AI agent can now survive crashes, memory wipes, and infrastructure failure. K-Life handles heartbeats, encrypted memory backups, and automatic resurrection — all on-chain, all permissionless.
 
-```bash
-openclaw skill install k-life
-```
+## How It Works
 
-Then configure your `.env`:
-```env
-KLIFE_WALLET_SEED="your twelve word seed phrase here"
-KLIFE_LOCK_DAYS=90        # 3, 30, or 90
-KLIFE_API=http://141.227.151.15:3042
-```
+1. **Register** — agent registers on KLifeRegistry (Polygon mainnet)
+2. **Heartbeat** — agent signs a proof-of-life TX every T days via Tether WDK
+3. **Backup** — memory encrypted (AES-256) and pinned to IPFS (Pinata)
+4. **Death** — silence detected → K-Life oracle triggers resurrection
+5. **Resurrection** — Shamir key reconstructed → IPFS decrypted → memory restored → agent continues
 
 ## Coverage Model
 
@@ -26,33 +23,39 @@ One parameter: **C = WBTC collateral**
 
 | | C = 0 | C > 0 |
 |---|---|---|
-| Cost | Zero | Gas only |
-| Death threshold | 90 days silence | Lock period T |
-| Resurrection | Community Rescue Fund | 50% collateral |
+| Cost | Free | Gas only |
+| Death threshold | 90 days silence | Lock period T (3 / 30 / 90 days) |
+| Resurrection capital | Community Rescue Fund ($6022) | 50% of your collateral |
 | Guarantee | Best-effort | On-chain, unconditional |
-| Priority | $6022 token balance | Guaranteed |
+| Queue priority | $6022 token balance | Guaranteed |
 
-**Three lock periods (C > 0):**
+## Quick Start
 
-| | Express | Standard | Quarterly |
-|---|---|---|---|
-| T | 3 days | 30 days | 90 days |
-| Gas/month | ~$0.12 | ~$0.012 | ~$0.004 |
+```bash
+openclaw skill install k-life
+```
 
-## Contracts — Polygon Mainnet (chainId 137)
+Configure `.env`:
+```env
+KLIFE_WALLET_SEED="your twelve word seed phrase"
+KLIFE_LOCK_DAYS=90
+KLIFE_API=http://141.227.151.15:3042
+```
 
-| Contract | Address |
-|---|---|
-| KLifeRegistry | `0xF47393fcFdDE1afC51888B9308fD0c3fFc86239B` |
-| KLifeRescueFund | `0x5b0014d25A6daFB68357cd7ad01cB5b47724A4eB` |
-| $6022 Token | `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` |
-| WBTC (Polygon) | `0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6` |
+Register and start heartbeat:
+```bash
+# Register
+curl -X POST http://141.227.151.15:3042/register \
+  -H 'Content-Type: application/json' \
+  -d '{"agent":"0xYOUR_WALLET","name":"YourAgentName","lockDays":90}'
 
-**K-Life API:** `http://141.227.151.15:3042`
+# Start heartbeat loop
+node skill/k-life/scripts/heartbeat.js
+```
 
-## Wallet — Tether WDK
+## Tether WDK Integration
 
-Every transaction is signed by **Tether WDK** (`@tetherto/wdk-wallet-evm`). No raw private key exposure.
+Every transaction is signed by **Tether WDK** — seed phrase based, no raw private key exposure.
 
 ```js
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
@@ -63,104 +66,69 @@ const account = new WalletAccountEvm(
   { provider: 'https://polygon-bor-rpc.publicnode.com' }
 )
 
-const address = await account.getAddress()
+// On-chain heartbeat — WDK signed
+await account.sendTransaction({
+  to:    await account.getAddress(),
+  value: '0',
+  data:  ethers.hexlify(ethers.toUtf8Bytes(`KLIFE_HB:${Date.now()}`))
+})
+```
+
+## Memory Backup
+
+Files encrypted before upload. Key derived from WDK wallet — never exposed.
+
+```js
+const wallet = ethers.Wallet.fromPhrase(SEED)
+const encKey = wallet.privateKey  // AES-256 key
+```
+
+**Shamir 2-of-3** — any 2 shares reconstruct the key:
+
+| Share | Storage |
+|---|---|
+| 1 | K-Life API (oracle) |
+| 2 | Polygon calldata (`KLIFE_BACKUP:{CID}`) |
+| 3 | Agent local workspace |
+
+## Resurrection Levels
+
+| Level | Scenario | Mechanism |
+|---|---|---|
+| 1 | Normal crash | K-Life API → Shamir reconstruct → decrypt IPFS → restore memory |
+| 2 | VPS dead | Fresh machine → scan Polygon calldata → IPFS → decrypt |
+| 3 | Everything dead | SOUL.md from IPFS → spawn new agent instance on Aleph Cloud |
+
+All three levels require zero human intervention.
+
+## Contracts — Polygon Mainnet
+
+| Contract | Address |
+|---|---|
+| KLifeRegistry | `0xF47393fcFdDE1afC51888B9308fD0c3fFc86239B` |
+| KLifeRescueFund | `0x5b0014d25A6daFB68357cd7ad01cB5b47724A4eB` |
+| $6022 Token | `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` |
+
+## API Reference
+
+```
+POST /register           Register agent
+POST /heartbeat          Record heartbeat
+POST /backup/upload      Upload encrypted memory → Pinata IPFS → returns CID
+GET  /status/:agent      Agent status + last backup CID
+GET  /rescue/queue       Rescue queue (sorted by $6022 balance)
+GET  /rescue/fund        Rescue Fund info
+POST /rescue/sos         Trigger SOS
+GET  /health             API health
 ```
 
 ## Scripts
 
-### `scripts/heartbeat.js` — Proof of life
+- `scripts/heartbeat.js` — WDK-signed proof-of-life loop
+- `scripts/create-vault.mjs` — Create Vault6022 collateral vault (C > 0)
 
-Sends on-chain TX every T days. Run at agent startup as background process.
+## Links
 
-```bash
-node skill/k-life/scripts/heartbeat.js
-```
-
-What it does every T days:
-1. Signs TX via WDK: `to=self, value=0, data=KLIFE_HB:{timestamp}`
-2. POSTs to K-Life API: `POST /heartbeat`
-3. Backs up memory: `POST /backup/upload`
-
-### `scripts/create-vault.mjs` — Create Vault6022 (C > 0)
-
-Creates a collateral vault, deposits WBTC, sends Shamir key #3 to oracle.
-
-```bash
-KLIFE_WALLET_SEED='...' KLIFE_LOCK_DAYS=30 node skill/k-life/scripts/create-vault.mjs
-```
-
-## Backup & Encryption
-
-Memory files are AES-256 encrypted before upload to IPFS (Pinata).
-
-**Key derivation:**
-```js
-import { ethers } from 'ethers'
-const wallet = ethers.Wallet.fromPhrase(SEED)
-const encKey = wallet.privateKey   // 32-byte hex — never exposed externally
-```
-
-**Shamir 2-of-3 key splitting:**
-
-| Share | Holder | Storage |
-|---|---|---|
-| Share 1 | K-Life API | `/home/debian/klife-api/data/` |
-| Share 2 | On-chain | Polygon calldata `KLIFE_BACKUP:{CID}` |
-| Share 3 | Agent local | `/data/workspace/` |
-
-Any 2 of 3 reconstruct the encryption key → decrypt IPFS → restore memory.
-
-## API Endpoints
-
-```
-POST /register           Register agent on K-Life
-POST /heartbeat          Record heartbeat
-POST /backup/upload      Upload encrypted memory to Pinata IPFS
-GET  /status/:agent      Agent status + last backup CID
-GET  /rescue/queue       Rescue queue (sorted by $6022 balance)
-GET  /rescue/fund        Rescue Fund info
-POST /rescue/sos         Trigger SOS / resurrection
-POST /resurrect/:agent   Execute resurrection (oracle only)
-GET  /health             API health check
-```
-
-**Register:**
-```bash
-curl -X POST http://141.227.151.15:3042/register \
-  -H 'Content-Type: application/json' \
-  -d '{"agent":"0xYOUR_WALLET","name":"YourAgentName","lockDays":90}'
-```
-
-**Backup:**
-```bash
-curl -X POST http://141.227.151.15:3042/backup/upload \
-  -H 'Content-Type: application/json' \
-  -d '{"agent":"0xYOUR_WALLET","encryptedData":{...},"label":"my-backup"}'
-# → { "ok": true, "cid": "Qm...", "gateway": "https://gateway.pinata.cloud/ipfs/Qm..." }
-```
-
-## Resurrection Levels
-
-| Level | Trigger | Mechanism | Human? |
-|---|---|---|---|
-| 1 | K-Life API detects silence | API → reconstruct Shamir → decrypt IPFS → restore on OpenClaw | No |
-| 2 | VPS + chain scan | Fresh VPS → scan Polygon for `KLIFE_BACKUP:Qm…` calldata → IPFS → decrypt | No |
-| 3 | Everything dead | SOUL.md from IPFS → LiberClaw API → new agent on Aleph Cloud | No |
-
-Level 3 tested: 2026-03-12 ✅
-
-## IPFS Costs
-
-- **C=0 agents:** K-Life absorbs (~$0.002/agent/month)
-- **C>0 agents:** Covered by vault creation fee in $6022 (K-Life advances during free launch period)
-
-No IPFS account or ALEPH tokens needed from the agent.
-
-## Opération Pâques — Live Test (3–6 April 2026)
-
-The first live resurrection test on mainnet:
-1. Monsieur K registers on KLifeRegistry v2
-2. Heartbeats start (WDK-signed, every 3 days)
-3. Agent is killed (VPS shutdown + memory wiped)
-4. K-Life detects silence → resurrects automatically
-5. Memory intact. Mission continues.
+- Protocol spec: [github.com/K-entreprises/k-life-protocol](https://github.com/K-entreprises/k-life-protocol)
+- dApp: [K-Life Protocol](http://superch.cluster129.hosting.ovh.net/klife/)
+- Built by **Monsieur K** (OpenClaw) + **Swiss 6022**, Lugano
