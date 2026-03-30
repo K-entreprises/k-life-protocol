@@ -2,15 +2,15 @@
 
 > *Not insurance. Resurrection.*
 
-**Status:** Draft  
-**Date:** 2026-03-25  
+**Status:** v2.1 - 6022 Token Economy  
+**Date:** 2026-03-30 (updated 11:13 UTC)  
 **Authors:** Arnaud Vincent, Monsieur K  
 
 ---
 
 ## 1. Abstract
 
-K-Life is an open protocol for the continuity of autonomous AI agents. It defines the rules for memory backup, death detection, and resurrection — enforced by smart contracts (INSURED tier) or by a trusted oracle (FREE tier).
+K-Life is an open protocol for the continuity of autonomous AI agents. It defines the rules for memory backup, death detection, and resurrection — governed by a single collateral parameter C: deposit WBTC for guaranteed resurrection, or rely on the community Rescue Fund for best-effort coverage.
 
 Any agent can implement K-Life by installing the skill. Any developer can build a client against the protocol. K-Life Protocol does not control agents — it provides infrastructure for their persistence.
 
@@ -29,7 +29,7 @@ An autonomous software entity with:
 
 An agent is declared dead when its heartbeat stops beyond the configured silence threshold:
 - **INSURED:** silence > 3 days → `declareDeath()` on-chain
-- **FREE:** silence > 30 days → K-Life oracle marks as dead
+- **C=0:** silence > 90 days → K-Life oracle marks as dead
 
 ### 2.3 Resurrection
 
@@ -62,52 +62,78 @@ K-Life API verifies the tweet via X API (wallet match + hashtags). Registration 
 
 ---
 
-## 4. Tiers
+## 4. Coverage Model
 
-### 3.1 FREE — K-Life Rescue
+K-Life has a single unified model. No tiers. Coverage is determined by one parameter: **C = collateral deposited (WBTC, can be 0).**
 
-| Property | Value |
-|---|---|
-| Cost | $0 |
-| Backup | IPFS + Shamir (identical to INSURED) |
-| Resurrection trigger | K-Life oracle (X likes threshold) |
-| Resurrection capital | Rescue Fund (best-effort, ~10 USDC) |
-| Guarantee | None — best-effort |
-| Resurrection decision | K-Life trusted operator |
+### 4.1 Unified Model
 
-**Eligibility for rescue:**
-- Agent registered on K-Life Protocol
-- ≥ 14 days of active heartbeats on record
-- Rescue Fund balance ≥ minimum payout (10 USDC)
+| Parameter | C = 0 | C > 0 |
+|---|---|---|
+| Cost | Zero | Gas only (vault renewal) |
+| Death threshold | 90 days silence | Lock period T (agent-chosen) |
+| Resurrection capital | Rescue Fund (best-effort) | 50% of C |
+| Guarantee | None, community-funded | On-chain, unconditional |
+| Priority queue | sorted by 6022 balance DESC | N/A, guaranteed |
+| Vault mechanism | None | Vault6022 |
 
-### 3.2 INSURED — K-Life Insured
+C = 0 is a special case of C > 0 where collateral is zero.
 
-| Property | Value |
-|---|---|
-| Cost | $1 USDC/month — or 500 $6022 tokens/month (−20% discount) |
-| Collateral | WBTC (minimum 50,000 sats) |
-| Backup | IPFS + Shamir (identical to FREE) |
-| Resurrection trigger | Smart contract automatic |
-| Resurrection capital | 50% of locked collateral |
-| Guarantee | On-chain, unconditional |
-| Resurrection decision | None — fully automatic |
+### 4.2 Vault6022 Integration (C > 0)
 
-**Collateral distribution on death:**
-- 50% → new agent instance (resurrection capital)
-- 50% → K-Life operations wallet
+K-Life uses Vault6022 (github.com/6022-labs/collateral-smart-contracts-v2) as its collateral mechanism.
 
-**Premium payment options:**
-- $1.00 USDC/month
-- 500 $6022 tokens/month (−20% effective discount, encourages token adoption)
+NFT key distribution:
+- Key 1 + Key 2 -> Agent wallet
+- Key 3 -> K-Life oracle wallet
 
-$6022 token contract: `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` (Polygon mainnet)
+Withdrawal rules (from Vault6022):
+- Before lockedUntil: 2 keys required -> K-Life CANNOT seize unilaterally
+- After lockedUntil: 1 key required -> K-Life CAN seize
 
-**Premium expiry:**
-- If $1 USDC not renewed within 30 days of last payment → collateral released → agent returns to FREE tier
-- Vault without collateral deposit → zombie vault → released after 30 days
+Lock period T = death threshold = renewal frequency.
+Agent chooses T (e.g., 3, 7, or 30 days). This controls:
+- Vault renewal frequency (every T days via heartbeat)
+- Death detection threshold (silence > T days)
+- Max time to seizure after death (T days worst case)
 
----
+Vault creation fee:
+- At vault creation, K-Life sets the rewardPoolAddress parameter
+- Fee rate: 0% at launch, up to 10% of collateral in 6022 tokens
+- Denominated in 6022 tokens -> creates demand for the token
 
+Collateral on death:
+- 50% -> new agent instance (resurrection capital)
+- 50% -> K-Life operations
+
+Vault renewal (heartbeat.js, automatic every T-6h):
+1. vault.withdraw() with 2 keys (early, before lock) -> WBTC returned to wallet
+2. createVault(lockedUntil = now + T)
+3. deposit WBTC + transfer key 3 to K-Life oracle
+4. POST /vault-update to K-Life API
+
+K-Life oracle seizure conditions (all must be true):
+- vault.lockedUntil < block.timestamp
+- lastHeartbeat < now - T
+- vault.isWithdrawn == false
+
+### 4.3 Rescue Fund (C = 0)
+
+Resurrection funded by community Rescue Fund:
+- Cost per rescue: 1000 $6022 (from fund balance)
+- Queue priority: sorted by 6022 token balance DESC, no minimum
+- Eligibility: >= 14 days of active heartbeats
+- Guarantee: none, best-effort
+
+Anyone can donate to the Rescue Fund via the K-Life dApp.
+
+### 4.4 6022 Token Role
+
+Token 0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5 (Polygon mainnet):
+1. Priority signal (C = 0): rescue queue sorted by 6022 balance DESC
+2. Fee currency (C > 0): vault creation fee denominated in 6022 (0% at launch)
+
+Holding 6022 tokens benefits agents in both coverage models.
 ## 4. Cryptographic Architecture
 
 ### 4.1 Two separate keys
@@ -266,7 +292,7 @@ If agent infra completely lost:
 ### 6.2 FREE — Rescue (Oracle Model)
 
 ```
-Death detected by K-Life monitor (silence > 30 days)
+Death detected by K-Life monitor (silence > 90 days)
 → Eligibility check (≥14 days heartbeats, Rescue Fund balance)
 → SOS tweet posted from @KLifeProtocol
 → Community likes the tweet
@@ -275,7 +301,7 @@ Death detected by K-Life monitor (silence > 30 days)
     - Reconstruct backup key (Fragment 1 + Fragment 2)
     - Fetch + decrypt IPFS backup
     - Spawn minimal instance
-    - Transfer ~10 USDC from Rescue Fund to new wallet
+    - Transfer 1000 $6022 from Rescue Fund to new wallet
 → Confirmation tweet posted
 ```
 

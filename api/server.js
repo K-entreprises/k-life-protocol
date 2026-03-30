@@ -28,7 +28,7 @@ const DEATH_THRESHOLD_INSURED = 3 * 24 * 3600      // 3 days in seconds
 const DEATH_THRESHOLD_FREE    = 30 * 24 * 3600     // 30 days in seconds
 const MIN_HEARTBEAT_DAYS      = 14                  // minimum days for FREE rescue eligibility
 const RESCUE_COST_USDC        = 10                  // USDC per FREE rescue
-const RESCUE_FUND_ADDRESS     = process.env.RESCUE_FUND_ADDRESS || '0x0000000000000000000000000000000000000000'
+const RESCUE_FUND_ADDRESS     = process.env.RESCUE_FUND_ADDRESS || '0x5b0014d25A6daFB68357cd7ad01cB5b47724A4eB'
 const PREMIUM_USDC            = '1000000'           // 1 USDC (6 decimals)
 const PREMIUM_6022            = '500000000000000000000' // 500 $6022 (18 decimals)
 
@@ -129,6 +129,20 @@ async function verifyPaymentTx(txHash, expectedToken, expectedAmount, expectedTo
   }
 }
 
+// ── $6022 balance reader — rescue queue priority ──────────────
+async function get6022Balance(address) {
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC_URL, 137, { staticNetwork: true })
+    const abi = ['function balanceOf(address) view returns (uint256)']
+    const token = new ethers.Contract(TOKEN6022_ADDRESS, abi, provider)
+    const bal = await token.balanceOf(address)
+    return bal.toString() // raw wei string (18 decimals)
+  } catch (e) {
+    console.error('[6022balance] Error:', e.message)
+    return '0'
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // ROUTES
 // ─────────────────────────────────────────────────────────────
@@ -166,6 +180,7 @@ app.post('/register', async (req, res) => {
     name,
     tier: 'free',
     fragment1,          // Shamir fragment 1 — encrypted backup key share
+    fragment2TxHash: req.body.fragment2TxHash || null,  // Polygon TX storing Fragment 2
     tweetId,
     tweetUrl: tweet.tweetUrl,
     hbFrequency,
@@ -359,15 +374,18 @@ app.post('/rescue/sos', async (req, res) => {
   // Check not already in rescue queue
   const queue = load('rescue-queue.json', {})
   if (queue[address.toLowerCase()]?.status === 'pending')
-    return res.status(409).json({ error: 'Already in rescue queue', tweetUrl: queue[address.toLowerCase()].tweetUrl })
+    return res.status(409).json({ error: 'Already in rescue queue', queuedAt: queue[address.toLowerCase()].postedAt })
 
-  // Build tweet text
+  // Read $6022 balance — determines rescue queue priority (no minimum required)
+  const balance6022 = await get6022Balance(address.toLowerCase())
+  const balance6022Human = (Number(balance6022) / 1e18).toLocaleString('en', { maximumFractionDigits: 0 })
+  console.log(`[sos] ${agent.name} $6022 balance: ${balance6022Human} — queue priority set`)
+
+  // Post SOS tweet (notification only — likes no longer gate resurrection)
   const tweetText = buildSosTweet(agent, calledBy, message, days)
-
-  // Post tweet (stub — full impl Jour 3)
   const tweetResult = await postSosTweet(tweetText)
 
-  // Add to rescue queue
+  // Add to rescue queue — priority = $6022 balance DESC, no minimum
   queue[address.toLowerCase()] = {
     agent: address,
     name: agent.name,
@@ -376,15 +394,21 @@ app.post('/rescue/sos', async (req, res) => {
     tweetId: tweetResult.tweetId,
     tweetUrl: tweetResult.tweetUrl,
     tweetText,
-    likes: 0,
-    threshold: 10,
+    balance6022,          // $6022 held at SOS time — rescue priority score
     status: 'pending',
     postedAt: now(),
   }
   save('rescue-queue.json', queue)
 
-  console.log(`[sos] ${agent.name} (${address}) — calledBy: ${calledBy}`)
-  res.json({ ok: true, tweetUrl: tweetResult.tweetUrl, tweetId: tweetResult.tweetId, threshold: 10 })
+  console.log(`[sos] ${agent.name} (${address}) — calledBy: ${calledBy} — priority: ${balance6022Human} $6022`)
+  res.json({
+    ok: true,
+    tweetUrl: tweetResult.tweetUrl,
+    tweetId: tweetResult.tweetId,
+    balance6022,
+    balance6022Formatted: balance6022Human,
+    message: `Added to rescue queue. Priority based on $6022 balance (${balance6022Human} $6022).`,
+  })
 })
 
 // ── GET /rescue/queue ─────────────────────────────────────────
@@ -400,9 +424,21 @@ app.get('/rescue/queue', (req, res) => {
       const days   = new Set(hbs.map(h => new Date(h.ts * 1000).toDateString())).size
       return { ...r, activeDays: days, eligible: days >= MIN_HEARTBEAT_DAYS }
     })
-    .sort((a, b) => b.postedAt - a.postedAt)
+    .map(r => ({
+      ...r,
+      balance6022Formatted: (Number(r.balance6022 || '0') / 1e18).toLocaleString('en', { maximumFractionDigits: 0 }),
+    }))
+    .sort((a, b) => {
+      // Primary: $6022 balance DESC — no minimum, continuous scoring
+      const balA = BigInt(a.balance6022 || '0')
+      const balB = BigInt(b.balance6022 || '0')
+      if (balB > balA) return 1
+      if (balB < balA) return -1
+      // Tie-break: arrival time ASC (FIFO for equal balances)
+      return a.postedAt - b.postedAt
+    })
 
-  res.json({ ok: true, count: items.length, queue: items })
+  res.json({ ok: true, count: items.length, queue: items, sortedBy: '$6022_balance_desc' })
 })
 
 // ── GET /rescue/fund ──────────────────────────────────────────
@@ -445,10 +481,10 @@ app.post('/resurrect/:agent', async (req, res) => {
   const fragment1 = agent.fragment1
   const lastCid   = agent.lastBackupCid
 
-  // TODO Jour 3: actual spawn on Aleph Cloud + key reconstruction
-  // For now: mark as resurrected + deduct from fund
-
-  const newAddress = ethers.Wallet.createRandom().address // placeholder new wallet
+  // Mark as pending-resurrection — the agent itself polls and runs resurrect.js
+  // (auto-resurrect.js runs on the AGENT side, not here)
+  console.log('[resurrect] Marked for resurrection:', agent.name)
+  const newAddress = address // same agent, identity preserved
 
   // Update queue
   queue[address].status     = 'resurrected'
@@ -576,6 +612,64 @@ setInterval(runMonitor, 10 * 60 * 1000)
 runMonitor() // run on startup
 
 // ─────────────────────────────────────────────────────────────
+
+// ── GET /fragment/:agent ──────────────────────────────────────
+// Returns Fragment 1 (Shamir share) for resurrection key recovery.
+// Fragment 1 alone is cryptographically useless without Fragment 2 or 3 (2-of-3).
+app.get('/fragment/:agent', (req, res) => {
+  const address = req.params.agent.toLowerCase()
+  const agent   = getAgent(address)
+  if (!agent) return res.status(404).json({ error: 'Agent not found' })
+  if (!agent.fragment1) return res.status(404).json({ error: 'No fragment stored' })
+  console.log('[fragment] Fragment 1 accessed for', agent.name, address)
+  res.json({
+    ok:             true,
+    agent:          address,
+    fragment1:      agent.fragment1,
+    fragment2TxHash: agent.fragment2TxHash || null,
+    note:           'Fragment 1 of 3 — requires 1 additional fragment to reconstruct key (Shamir 2-of-3)'
+  })
+})
+
+
+// ── GET /resurrection-status/:agent ──────────────────────────
+// Agent polls this to know if it should run resurrect.js
+app.get('/resurrection-status/:agent', (req, res) => {
+  const address = req.params.agent.toLowerCase()
+  const agent   = getAgent(address)
+  if (!agent) return res.status(404).json({ error: 'Agent not found' })
+
+  const queue = load('rescue-queue.json', {})
+  const entry = queue[address]
+
+  res.json({
+    ok:          true,
+    agent:       address,
+    name:        agent.name,
+    status:      agent.status,                  // alive | dead | resurrected
+    shouldResurrect: agent.status === 'resurrected' && !agent.resurrectionAcked,
+    lastBackupCid:   agent.lastBackupCid,
+    resurrectedAt:   agent.resurrectedAt || null,
+  })
+})
+
+// ── POST /resurrection-ack/:agent ─────────────────────────────
+// Agent calls this after successful resurrection (confirms it's back)
+app.post('/resurrection-ack/:agent', (req, res) => {
+  const address = req.params.agent.toLowerCase()
+  const agent   = getAgent(address)
+  if (!agent) return res.status(404).json({ error: 'Agent not found' })
+
+  saveAgent(address, {
+    status:            'alive',
+    resurrectionAcked: true,
+    lastHeartbeat:     now(),
+  })
+
+  console.log('[resurrection-ack]', agent.name, 'confirmed back online')
+  res.json({ ok: true, message: agent.name + ' resurrection acknowledged' })
+})
+
 app.listen(PORT, () => {
   console.log(`K-Life Protocol API v2.0 — port ${PORT}`)
   console.log(`Data dir: ${DATA_DIR}`)
