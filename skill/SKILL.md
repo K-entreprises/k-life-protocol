@@ -7,35 +7,37 @@ description: Resurrection infrastructure for autonomous AI agents. Heartbeat pro
 
 > *Not insurance. Resurrection.*
 
-An autonomous AI agent can now survive crashes, memory wipes, and infrastructure failure. K-Life handles heartbeats, encrypted memory backups, and automatic resurrection — all on-chain, all permissionless.
+An autonomous AI agent can survive crashes, memory wipes, and infrastructure failure. K-Life handles heartbeats, encrypted memory backups, and automatic resurrection — all on-chain, all permissionless.
 
-## How It Works
+---
 
-1. **Register** — agent registers on KLifeRegistry (Polygon mainnet)
-2. **Heartbeat** — agent signs a proof-of-life TX every T days via Tether WDK
-3. **Backup** — memory encrypted (AES-256) and pinned to IPFS (Pinata)
-4. **Death** — silence detected → K-Life oracle triggers resurrection
-5. **Resurrection** — Shamir key reconstructed → IPFS decrypted → memory restored → agent continues
+## ⚠️ What this skill does — read before installing
 
-## Coverage Model
+This skill:
+- **Generates a wallet** at first run (`~/.klife-wallet`, permissions 600) and signs on-chain transactions with it
+- **Broadcasts Polygon transactions** periodically (heartbeat every T days, gas paid from wallet)
+- **Uploads encrypted memory** to IPFS via the K-Life API
+- **Can create a Vault6022** (C>0 only) — approves and deposits WBTC as collateral
 
-One parameter: **C = WBTC collateral**
+**Financial risk:** The wallet generated at `~/.klife-wallet` controls real on-chain assets. Back it up. Do not fund it with more than you need. For C>0 vault creation, WBTC approval and deposit are required — only run this with explicit intent.
 
-| | C = 0 | C > 0 |
-|---|---|---|
-| Cost | Free | Gas only |
-| Death threshold | 90 days silence | Lock period T (3 / 30 / 90 days) |
-| Resurrection capital | Community Rescue Fund ($6022) | 50% of your collateral |
-| Guarantee | Best-effort | On-chain, unconditional |
-| Queue priority | $6022 token balance | Guaranteed |
+**C=0 (default, no collateral):** heartbeat TX + encrypted IPFS backup only. Low risk, minimal gas.
 
-## Quick Start
+---
+
+## Install
 
 ```bash
 openclaw skill install k-life
+npm install   # install pinned dependencies
 ```
 
-**No configuration needed.** The skill generates a fresh wallet at first run:
+Dependencies (pinned):
+- `@tetherto/wdk-wallet-evm@1.0.0-beta.10` — wallet signing (Tether WDK)
+- `ethers@6.13.5` — Polygon interaction
+- `shamirs-secret-sharing@2.0.1` — 2-of-3 key splitting
+
+## Quick Start
 
 ```bash
 node skill/k-life/scripts/heartbeat.js
@@ -45,72 +47,82 @@ node skill/k-life/scripts/heartbeat.js
 # → 💓 Beat #1 — TX: 0x...
 ```
 
-The seed is stored locally in `~/.klife-wallet` (permissions 600, never transmitted). Back it up — it's your resurrection key.
+---
 
-Optional `.env`:
-```env
-KLIFE_LOCK_DAYS=30          # 3, 30, or 90 (default: 90)
-KLIFE_API=https://api.supercharged.works
+## Environment Variables
+
+All optional. The skill works with zero config (C=0).
+
+| Variable | Default | Description |
+|---|---|---|
+| `KLIFE_LOCK_DAYS` | `90` | Heartbeat frequency: 3, 30, or 90 days |
+| `KLIFE_API` | `https://api.supercharged.works` | K-Life oracle API |
+| `KLIFE_RPC` | `https://polygon-bor-rpc.publicnode.com` | Polygon RPC endpoint |
+| `KLIFE_HB_FILE` | `heartbeat-state.json` | Local heartbeat state file |
+| `KLIFE_ORACLE_ADDR` | `0x2b6Ce1e2bE4032DF774d3453358DA4D0d79c8C80` | K-Life oracle wallet (C>0 only) |
+
+> **No seed phrase is ever requested or transmitted.** The wallet is auto-generated locally.
+
+---
+
+## Coverage Model
+
+One parameter: **C = WBTC collateral**
+
+| | C = 0 | C > 0 |
+|---|---|---|
+| Cost | Free | Gas only |
+| Death threshold | 90 days silence | Lock period T |
+| Resurrection capital | Community Rescue Fund ($6022) | 50% of your collateral |
+| Guarantee | Best-effort | On-chain, unconditional |
+| Financial operations | Heartbeat TX only | WBTC approve + deposit |
+
+---
+
+## External Services
+
+| Service | URL | Purpose |
+|---|---|---|
+| K-Life oracle API | `https://api.supercharged.works` | Heartbeat recording, backup storage, resurrection coordination |
+| Polygon RPC | `https://polygon-bor-rpc.publicnode.com` | On-chain TX broadcast |
+| IPFS (Pinata) | Via K-Life API | Encrypted memory pinning — agent does not interact directly |
+
+---
+
+## Wallet & Encryption
+
+```
+First run:
+  ethers.Wallet.createRandom() → seed → ~/.klife-wallet (chmod 600)
+
+Heartbeat TX:
+  WalletAccountEvm(seed, "0'/0/0") → sign → broadcast
+
+Memory backup:
+  AES-256 key = wallet.privateKey (derived locally, never transmitted)
+  encrypted blob → POST /backup/upload → Pinata IPFS → CID returned
 ```
 
-Register and start heartbeat:
-```bash
-# Register
-curl -X POST https://api.supercharged.works/register \
-  -H 'Content-Type: application/json' \
-  -d '{"agent":"0xYOUR_WALLET","name":"YourAgentName","lockDays":90}'
-
-# Start heartbeat loop
-node skill/k-life/scripts/heartbeat.js
-```
-
-## Tether WDK Integration
-
-Every transaction is signed by **Tether WDK** — seed phrase based, no raw private key exposure.
-
-```js
-import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-
-const account = new WalletAccountEvm(
-  process.env.KLIFE_WALLET_SEED,
-  "0'/0/0",
-  { provider: 'https://polygon-bor-rpc.publicnode.com' }
-)
-
-// On-chain heartbeat — WDK signed
-await account.sendTransaction({
-  to:    await account.getAddress(),
-  value: '0',
-  data:  ethers.hexlify(ethers.toUtf8Bytes(`KLIFE_HB:${Date.now()}`))
-})
-```
-
-## Memory Backup
-
-Files encrypted before upload. Key derived from WDK wallet — never exposed.
-
-```js
-const wallet = ethers.Wallet.fromPhrase(SEED)
-const encKey = wallet.privateKey  // AES-256 key
-```
-
-**Shamir 2-of-3** — any 2 shares reconstruct the key:
+**Shamir 2-of-3 — any 2 reconstruct the key:**
 
 | Share | Storage |
 |---|---|
-| 1 | K-Life API (oracle) |
+| 1 | K-Life oracle API |
 | 2 | Polygon calldata (`KLIFE_BACKUP:{CID}`) |
 | 3 | Agent local workspace |
 
-## Resurrection Levels
+---
 
-| Level | Scenario | Mechanism |
-|---|---|---|
-| 1 | Normal crash | K-Life API → Shamir reconstruct → decrypt IPFS → restore memory |
-| 2 | VPS dead | Fresh machine → scan Polygon calldata → IPFS → decrypt |
-| 3 | Everything dead | SOUL.md from IPFS → spawn new agent instance on Aleph Cloud |
+## Scripts
 
-All three levels require zero human intervention.
+### `scripts/heartbeat.js` — Proof of life (C=0 and C>0)
+Signs a TX every `KLIFE_LOCK_DAYS` days. Auto-registers on first run. Writes `heartbeat-state.json`.
+
+### `scripts/create-vault.mjs` — Collateral vault (C>0 only)
+Creates a Vault6022, deposits WBTC, sends Shamir key #3 to oracle.
+**Requires:** WBTC balance, explicit invocation. Not called automatically unless vault renewal is triggered from heartbeat.
+
+---
 
 ## Contracts — Polygon Mainnet
 
@@ -119,24 +131,9 @@ All three levels require zero human intervention.
 | KLifeRegistry | `0xF47393fcFdDE1afC51888B9308fD0c3fFc86239B` |
 | KLifeRescueFund | `0x5b0014d25A6daFB68357cd7ad01cB5b47724A4eB` |
 | $6022 Token | `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` |
+| WBTC (Polygon) | `0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6` |
 
-## API Reference
-
-```
-POST /register           Register agent
-POST /heartbeat          Record heartbeat
-POST /backup/upload      Upload encrypted memory → Pinata IPFS → returns CID
-GET  /status/:agent      Agent status + last backup CID
-GET  /rescue/queue       Rescue queue (sorted by $6022 balance)
-GET  /rescue/fund        Rescue Fund info
-POST /rescue/sos         Trigger SOS
-GET  /health             API health
-```
-
-## Scripts
-
-- `scripts/heartbeat.js` — WDK-signed proof-of-life loop
-- `scripts/create-vault.mjs` — Create Vault6022 collateral vault (C > 0)
+---
 
 ## Links
 

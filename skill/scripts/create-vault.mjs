@@ -15,7 +15,7 @@ import { resolve } from 'path'
 const RPC          = process.env.KLIFE_RPC        || 'https://polygon-bor-rpc.publicnode.com'
 const SEED         = process.env.KLIFE_WALLET_SEED
 const KLIFE_ORACLE = process.env.KLIFE_ORACLE_ADDR || '0x2b6Ce1e2bE4032DF774d3453358DA4D0d79c8C80'
-const API_URL      = process.env.KLIFE_API_URL     || 'https://klife.monsieurk.io'
+const API_URL      = process.env.KLIFE_API_URL     || 'https://api.supercharged.works'
 const LOCK_DAYS    = parseInt(process.env.KLIFE_LOCK_DAYS || '90')
 
 // Addresses — Polygon mainnet

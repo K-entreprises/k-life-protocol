@@ -1,0 +1,13 @@
+{
+  "name": "k-life-skill",
+  "version": "2.1.7",
+  "type": "module",
+  "description": "K-Life resurrection skill for OpenClaw agents",
+  "dependencies": {
+    "@tetherto/wdk-wallet-evm": "1.0.0-beta.10",
+    "shamirs-secret-sharing": "2.0.1",
+    "ethers": "6.13.5"
+  },
+  "devDependencies": {},
+  "engines": { "node": ">=18" }
+}
