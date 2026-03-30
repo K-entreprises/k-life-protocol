@@ -111,27 +111,37 @@ One parameter: **C = WBTC collateral**
 
 ---
 
-## Wallet & Encryption
+## Wallet, Encryption & Backup — What runs where
 
+**Client-side (in these scripts):**
 ```
 First run:
   ethers.Wallet.createRandom() → seed → ~/.klife-wallet (chmod 600)
 
-Heartbeat TX:
-  WalletAccountEvm(seed, "0'/0/0") → sign → broadcast
+Heartbeat TX (heartbeat.js):
+  WalletAccountEvm(seed, "0'/0/0") → sign TX → broadcast to Polygon
 
-Memory backup:
-  AES-256 key = wallet.privateKey (derived locally, never transmitted)
-  encrypted blob → POST /backup/upload → Pinata IPFS → CID returned
+Vault creation (create-vault.mjs):
+  WDK → approve WBTC → create Vault6022 → notify API
+  ⚠️ Beta: requires KLIFE_VAULT_CONTROLLER (pending Protocol 6022 mainnet deployment)
 ```
 
-**Shamir 2-of-3 — any 2 reconstruct the key:**
+**Server-side (K-Life API at `api.supercharged.works`):**
+```
+Memory backup:
+  POST /backup/upload ← agent sends data
+  API: AES-256 encrypt (key = wallet.privateKey, derived from seed)
+  API: Shamir 2-of-3 split → Share 1 stored server-side
+  API: pin to IPFS via Pinata → return CID
 
-| Share | Storage |
-|---|---|
-| 1 | K-Life oracle API |
-| 2 | Polygon calldata (`KLIFE_BACKUP:{CID}`) |
-| 3 | Agent local workspace |
+Share 2: stored on-chain (Polygon calldata KLIFE_BACKUP:{CID})
+Share 3: returned to agent (stored locally)
+
+Resurrection:
+  API: reconstruct key from shares 1+2 → decrypt IPFS → restore files
+```
+
+The AES-256 encryption, IPFS pinning, and Shamir splitting happen on the K-Life API server — not in the local scripts. The skill scripts handle wallet generation, on-chain heartbeats, and vault creation. The API handles memory backup and resurrection.
 
 ---
 
