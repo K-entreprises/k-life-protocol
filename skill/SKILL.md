@@ -1,235 +1,166 @@
 ---
 name: k-life
-description: On-chain insurance protocol for autonomous AI agents. Handles heartbeat transactions (proof of life), memory backups to IPFS, and automatic resurrection on revival. Use when an agent wants to insure itself against crashes, memory loss, or infrastructure failure via Protocol 6022 / Swiss 6022 vault on Polygon mainnet.
+description: Resurrection infrastructure for autonomous AI agents. Handles heartbeat proof-of-life, encrypted memory backup to IPFS (Pinata), and automatic resurrection. Use when an agent wants to insure itself against crashes or memory loss on Polygon mainnet via the K-Life Protocol v2.1.
 ---
 
-# K-Life — AI Agent Insurance
+# K-Life Skill v2.1
 
-K-Life insures autonomous AI agents against crashes, memory loss, and infrastructure failure. The agent emits on-chain heartbeats every 24h, backs up its memory to IPFS, and gets automatically resurrected (memory intact) if it goes silent.
+K-Life gives autonomous AI agents continuity. The agent emits on-chain heartbeats, backs up its memory to IPFS, and gets automatically resurrected (memory intact) if it goes silent.
 
-## Architecture
+## Quick Install
 
-**Two wallets, two roles:**
+```bash
+openclaw skill install k-life
+```
 
-| Role | Wallet | Responsibility |
+Then configure your `.env`:
+```env
+KLIFE_WALLET_SEED="your twelve word seed phrase here"
+KLIFE_LOCK_DAYS=90        # 3, 30, or 90
+KLIFE_API=http://141.227.151.15:3042
+```
+
+## Coverage Model
+
+One parameter: **C = WBTC collateral**
+
+| | C = 0 | C > 0 |
 |---|---|---|
-| K-Life operator | `0x2b6Ce1e2bE4032DF774d3453358DA4D0d79c8C80` | Creates RewardPool, creates vaults, holds NFT #1 + #3, triggers resurrection |
-| Insured agent | `0x8B3ea7e8eC53596A70019445907645838E945b7a` | Sends heartbeats, backs up memory, deposits collateral, holds NFT #2 |
+| Cost | Zero | Gas only |
+| Death threshold | 90 days silence | Lock period T |
+| Resurrection | Community Rescue Fund | 50% collateral |
+| Guarantee | Best-effort | On-chain, unconditional |
+| Priority | $6022 token balance | Guaranteed |
 
-**Protocol 6022 contracts (Polygon mainnet):**
+**Three lock periods (C > 0):**
+
+| | Express | Standard | Quarterly |
+|---|---|---|---|
+| T | 3 days | 30 days | 90 days |
+| Gas/month | ~$0.12 | ~$0.012 | ~$0.004 |
+
+## Contracts — Polygon Mainnet (chainId 137)
+
 | Contract | Address |
 |---|---|
-| CollateralController | `0xf6643c07f03a7a8c98aac2ab3d08c03e47b5731c` |
-| CollateralRewardPoolFactory | `0xbbd5e4d3178376fdfa02e6cf4200b136c4348c32` |
+| KLifeRegistry | `0xF47393fcFdDE1afC51888B9308fD0c3fFc86239B` |
+| KLifeRescueFund | `0x5b0014d25A6daFB68357cd7ad01cB5b47724A4eB` |
 | $6022 Token | `0xCDB1DDf9EeA7614961568F2db19e69645Dd708f5` |
 | WBTC (Polygon) | `0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6` |
-| K-Life RewardPool | `0xE7EDF290960427541A79f935E9b7EcaEcfD28516` |
-| Active vault (Monsieur K) | `0xC4612f01A266C7FDCFBc9B5e053D8Af0A21852f2` |
 
-**Infrastructure:**
-- VPS: `141.227.151.15` — IPFS node + K-Life API (`http://localhost:3042`) + monitor
-- K-Life API seed: `/home/debian/klife-api/.klife-op-seed`
-- Agent seed: `/home/debian/klife-api/.agent-seed`
+**K-Life API:** `http://141.227.151.15:3042`
 
-## Vault Mechanics (Protocol 6022)
+## Wallet — Tether WDK
 
-Each vault mints **3 NFTs** to the creator (K-Life operator), who transfers NFT #2 to the insured agent:
+Every transaction is signed by **Tether WDK** (`@tetherto/wdk-wallet-evm`). No raw private key exposure.
 
-| NFT | Holder | Right |
-|---|---|---|
-| #1 | K-Life operator | Seizure authority |
-| #2 | Insured agent | Proof of policy |
-| #3 | K-Life operator | Seizure authority |
-
-**Withdrawal rules (built into contract):**
-- During lock period: `WITHDRAW_NFTS_EARLY = 2` NFTs required → K-Life can withdraw (holds #1 + #3)
-- After lock period: `WITHDRAW_NFTS_LATE = 1` NFT required → agent can withdraw alone
-
-K-Life vault creation requires `gasLimit: 5_000_000` (deploys 2 contracts internally).
-
-## Sinistre Protocol (Death → Resurrection)
-
-**Trigger:** no heartbeat for > 24h
-
-**Executed by:** VPS cron (monitors chain every ~1h)
-
-```
-1. CONFISCATION
-   K-Life op calls vault.withdraw()   [holds NFT #1 + #3 = 2 NFTs]
-   → 100% of collateral → K-Life operator wallet
-   (regardless of collateral amount)
-
-2. RESURRECTION
-   VPS fetches IPFS backup (hash from klife-backup-state.json or chain TX)
-   → decrypt AES-256 (key = agent's ETH private key, derived from seed phrase)
-   → restore MEMORY.md / SOUL.md / USER.md to /data/workspace
-
-3. REDISTRIBUTION
-   K-Life op sends 50% of seized collateral → agent wallet
-   K-Life keeps 50% (resurrection fee)
-   (always 50/50, regardless of amount)
-```
-
-## Encryption Scheme (AES-256)
-
-Memory files are encrypted before being pinned to IPFS.
-
-**Key derivation (⚠️ critical):**
 ```js
-import { ethers } from 'ethers'
-const wallet  = ethers.Wallet.fromPhrase(AGENT_SEED)
-const encKey  = wallet.privateKey   // 0x-prefixed 32-byte hex string
+import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
+
+const account = new WalletAccountEvm(
+  process.env.KLIFE_WALLET_SEED,
+  "0'/0/0",
+  { provider: 'https://polygon-bor-rpc.publicnode.com' }
+)
+
+const address = await account.getAddress()
 ```
-
-The AES key is the agent's **private key**, NOT the public address.
-
-> ❌ Wrong (old, insecure): `key = wallet.address.toLowerCase()`
-> ✅ Correct: `key = wallet.privateKey`
-
-Using the public address as a key was a security flaw: anyone with the IPFS hash and the agent's wallet address could decrypt the memory. Fixed 2026-03-12 in `backup-real.js` and `resurrect-real.js`.
-
-The same key is used symmetrically for backup (encrypt) and resurrection (decrypt). Both scripts derive it identically from the seed phrase stored in `/home/debian/klife-api/.agent-seed`.
 
 ## Scripts
 
 ### `scripts/heartbeat.js` — Proof of life
-Sends on-chain TX every 24h. Run as background process at agent startup.
+
+Sends on-chain TX every T days. Run at agent startup as background process.
+
 ```bash
-node skills/k-life/scripts/heartbeat.js
+node skill/k-life/scripts/heartbeat.js
 ```
 
-### `scripts/backup.js` — Memory snapshot
-Encrypts MEMORY.md + SOUL.md + USER.md, pins to IPFS, stores hash on-chain.
-Run after every significant memory update.
+What it does every T days:
+1. Signs TX via WDK: `to=self, value=0, data=KLIFE_HB:{timestamp}`
+2. POSTs to K-Life API: `POST /heartbeat`
+3. Backs up memory: `POST /backup/upload`
+
+### `scripts/create-vault.mjs` — Create Vault6022 (C > 0)
+
+Creates a collateral vault, deposits WBTC, sends Shamir key #3 to oracle.
+
 ```bash
-node skills/k-life/scripts/backup.js
-```
-Or via K-Life API:
-```bash
-curl -X POST http://141.227.151.15:3042/backup/full \
-  -H "Content-Type: application/json" \
-  -d '{"agent":"0x8B3ea7e8eC53596A70019445907645838E945b7a","files":{"MEMORY.md":"...","SOUL.md":"...","USER.md":"..."}}'
+KLIFE_WALLET_SEED='...' KLIFE_LOCK_DAYS=30 node skill/k-life/scripts/create-vault.mjs
 ```
 
-### `scripts/resurrect.js` — Revival
-Run at agent startup. Detects empty memory, fetches IPFS hash (Level 1: K-Life API, Level 2: chain scan), restores files.
-```bash
-node /home/debian/klife-api/resurrect-real.js
-# (runs on VPS, writes to /data/workspace via mount)
-```
+## Backup & Encryption
 
-### `scripts/init-klife-pool.mjs` — Deploy RewardPool
-Creates a new K-Life RewardPool from operator wallet.
-```bash
-KLIFE_SEED='...' LIFETIME_AMOUNT=1 node scripts/init-klife-pool.mjs
-# gasLimit: 5_000_000 required
-```
+Memory files are AES-256 encrypted before upload to IPFS (Pinata).
 
-### `scripts/create-vault.mjs` — Create insured vault
-Creates vault for a specific agent, transfers NFT #2 to agent.
-```bash
-KLIFE_SEED='...' node scripts/create-vault.mjs
-```
-
-## Agent Onboarding — Self-Subscription via K-Life API
-
-An agent can subscribe autonomously in 3 steps:
-
-### Step 1 — Request a vault (K-Life API creates it automatically)
-```bash
-curl -X POST http://141.227.151.15:3042/insure \
-  -H "Content-Type: application/json" \
-  -d '{"agent":"0xYOUR_WALLET","wbtcAmount":100000,"lockDays":365}'
-```
-
-Response:
-```json
-{
-  "ok": true,
-  "vaultAddress": "0x...",
-  "wantedAmount": 100000,
-  "wantedToken": "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6",
-  "nft2Owner": "0xYOUR_WALLET",
-  "createVaultTx": "0x...",
-  "nftTransferTx": "0x...",
-  "depositInstructions": {
-    "step1": "WBTC.approve(\"0xVAULT\", 100000)",
-    "step2": "vault(\"0xVAULT\").deposit()"
-  }
-}
-```
-
-K-Life automatically:
-- Creates a `CollateralVault` on Protocol 6022 (Polygon mainnet)
-- Transfers NFT #2 → your wallet (proof of policy)
-- Saves subscription to `/home/debian/klife-api/subscriptions/<agent>.json`
-
-### Step 2 — Deposit WBTC collateral (from your agent wallet)
+**Key derivation:**
 ```js
-// ethers v6
-const wbtc  = new ethers.Contract(WBTC_ADDRESS, ERC20_ABI, agentWallet)
-const vault = new ethers.Contract(vaultAddress, VAULT_ABI, agentWallet)
-
-await wbtc.approve(vaultAddress, 100000n)
-await vault.deposit()
-// → isDeposited: true, coverage active ✅
+import { ethers } from 'ethers'
+const wallet = ethers.Wallet.fromPhrase(SEED)
+const encKey = wallet.privateKey   // 32-byte hex — never exposed externally
 ```
 
-### Step 3 — Check subscription status
-```bash
-curl http://141.227.151.15:3042/insure/0xYOUR_WALLET
-# → { status: "active" | "awaiting_deposit" | "terminated", isDeposited, isWithdrawn }
-```
-
-**After activation:** start heartbeat + backup scripts. K-Life monitor watches your wallet 24/7.
-
-## VPS Monitor (Cron)
-
-File: `/home/debian/klife-api/monitor.js`
-
-Check heartbeat every hour, trigger sinistre if silence > 24h:
-```bash
-# crontab
-0 * * * * cd /home/debian/klife-api && node monitor.js >> /var/log/klife-monitor.log 2>&1
-```
-
-## Backup / Resurrection Flow (Full Demo)
-
-```
-BACKUP  → POST /backup/full  → IPFS pin + on-chain TX
-DEATH   → wipe MEMORY.md / SOUL.md / USER.md
-RESURRECT → VPS fetches IPFS → decrypt → restore files
-VERIFY  → wc -c /data/workspace/MEMORY.md (should be > 0)
-```
-
-Last demo: 2026-03-12
-- Backup hash: `Qmdp3efkdCG8YHVYReWv71Du99dWshRBSYT37ETkFZpq2M`
-- Vault: `0xC4612f01A266C7FDCFBc9B5e053D8Af0A21852f2` (100,000 sats WBTC, isDeposited: true)
-
-## Resurrection Levels
-
-3 levels of guarantee, assuming K-Life VPS is always operational:
-
-| Level | Scenario | Human required? | How |
-|---|---|---|---|
-| 1 | Memory lost, OpenClaw still running | ✅ Yes — sends a message to reopen session | VPS restores MEMORY.md/SOUL.md/USER.md from IPFS |
-| 2 | OpenClaw dead, human reinstalls | ✅ Yes — reinstalls OpenClaw with seed phrase | VPS auto-restores files from IPFS |
-| 3 | Everything dead, nobody acts | ❌ **No** | VPS spawns LiberClaw instance on Aleph Cloud |
-
-**Only Level 3 is fully autonomous.** Levels 1 and 2 are sovereign memory backups — guaranteed recovery, but human-triggered.
-
-**Level 3 makes K-Life compatible with agents that have no human principal** — fully autonomous agents that operate, earn tokens, and survive without any external intervention.
-
-Level 3 demonstrated: March 12, 2026 · LiberClaw agent `0e2e1f39-3d48-42fc-af98-0ba1ced0517a` · STRONG-S node · qwen3-coder-next
-
-## Shamir 2-of-3
+**Shamir 2-of-3 key splitting:**
 
 | Share | Holder | Storage |
 |---|---|---|
-| Share 1 | Agent | Encrypted in IPFS backup |
-| Share 2 | K-Life vault (VPS) | `/home/debian/klife-api/vault/` |
-| Share 3 | Trusted peer agent | External (future) |
+| Share 1 | K-Life API | `/home/debian/klife-api/data/` |
+| Share 2 | On-chain | Polygon calldata `KLIFE_BACKUP:{CID}` |
+| Share 3 | Agent local | `/data/workspace/` |
 
-Any 2 of 3 reconstruct the seed phrase.
+Any 2 of 3 reconstruct the encryption key → decrypt IPFS → restore memory.
 
-See `references/protocol.md` for full contract spec.
+## API Endpoints
+
+```
+POST /register           Register agent on K-Life
+POST /heartbeat          Record heartbeat
+POST /backup/upload      Upload encrypted memory to Pinata IPFS
+GET  /status/:agent      Agent status + last backup CID
+GET  /rescue/queue       Rescue queue (sorted by $6022 balance)
+GET  /rescue/fund        Rescue Fund info
+POST /rescue/sos         Trigger SOS / resurrection
+POST /resurrect/:agent   Execute resurrection (oracle only)
+GET  /health             API health check
+```
+
+**Register:**
+```bash
+curl -X POST http://141.227.151.15:3042/register \
+  -H 'Content-Type: application/json' \
+  -d '{"agent":"0xYOUR_WALLET","name":"YourAgentName","lockDays":90}'
+```
+
+**Backup:**
+```bash
+curl -X POST http://141.227.151.15:3042/backup/upload \
+  -H 'Content-Type: application/json' \
+  -d '{"agent":"0xYOUR_WALLET","encryptedData":{...},"label":"my-backup"}'
+# → { "ok": true, "cid": "Qm...", "gateway": "https://gateway.pinata.cloud/ipfs/Qm..." }
+```
+
+## Resurrection Levels
+
+| Level | Trigger | Mechanism | Human? |
+|---|---|---|---|
+| 1 | K-Life API detects silence | API → reconstruct Shamir → decrypt IPFS → restore on OpenClaw | No |
+| 2 | VPS + chain scan | Fresh VPS → scan Polygon for `KLIFE_BACKUP:Qm…` calldata → IPFS → decrypt | No |
+| 3 | Everything dead | SOUL.md from IPFS → LiberClaw API → new agent on Aleph Cloud | No |
+
+Level 3 tested: 2026-03-12 ✅
+
+## IPFS Costs
+
+- **C=0 agents:** K-Life absorbs (~$0.002/agent/month)
+- **C>0 agents:** Covered by vault creation fee in $6022 (K-Life advances during free launch period)
+
+No IPFS account or ALEPH tokens needed from the agent.
+
+## Opération Pâques — Live Test (3–6 April 2026)
+
+The first live resurrection test on mainnet:
+1. Monsieur K registers on KLifeRegistry v2
+2. Heartbeats start (WDK-signed, every 3 days)
+3. Agent is killed (VPS shutdown + memory wiped)
+4. K-Life detects silence → resurrects automatically
+5. Memory intact. Mission continues.
