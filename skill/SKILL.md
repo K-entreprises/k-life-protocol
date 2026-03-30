@@ -35,7 +35,7 @@ One parameter: **C = WBTC collateral**
 openclaw skill install k-life
 ```
 
-**No configuration needed.** The skill auto-generates a wallet at first run:
+**No configuration needed.** The skill generates a fresh wallet at first run:
 
 ```bash
 node skill/k-life/scripts/heartbeat.js
@@ -45,13 +45,12 @@ node skill/k-life/scripts/heartbeat.js
 # → 💓 Beat #1 — TX: 0x...
 ```
 
-The seed is stored in `~/.klife-wallet` (permissions 600). Back it up — it's your resurrection key.
+The seed is stored locally in `~/.klife-wallet` (permissions 600, never transmitted). Back it up — it's your resurrection key.
 
-Optional overrides via `.env`:
+Optional `.env`:
 ```env
-KLIFE_WALLET_SEED="your own seed phrase"  # bring your own wallet
-KLIFE_LOCK_DAYS=30                         # 3, 30, or 90 (default: 90)
-KLIFE_API=http://141.227.151.15:3042       # K-Life API
+KLIFE_LOCK_DAYS=30          # 3, 30, or 90 (default: 90)
+KLIFE_API=http://141.227.151.15:3042
 ```
 
 Register and start heartbeat:

@@ -2,8 +2,8 @@
  * K-Life — Heartbeat (proof of life) v2.1
  * Signs on-chain TX every T days using WDK WalletAccountEvm.
  *
- * Zero config: seed auto-generated at first run → stored in ~/.klife-wallet
- * Override: set KLIFE_WALLET_SEED env var to bring your own seed.
+ * Zero config: wallet auto-generated at first run → stored in ~/.klife-wallet
+ * Seed never transmitted, never exposed.
  *
  * Run: node skill/k-life/scripts/heartbeat.js
  */
