@@ -25,6 +25,28 @@ This skill:
 
 ---
 
+## Why K-Life cannot confiscate your collateral arbitrarily
+
+This is the core trust mechanism. **Collateral is held in a Vault6022** (Protocol 6022), not by K-Life directly. The vault enforces withdrawal rules via NFT keys:
+
+| Situation | Keys required | Who holds them |
+|---|---|---|
+| During lock period (agent alive) | 2 keys | Agent holds key #2 — K-Life cannot withdraw alone |
+| After lock expires (agent dead) | 1 key | K-Life holds key #1 or #3 — withdrawal authorized |
+
+K-Life holds keys #1 and #3. The agent holds key #2.
+
+**This means:**
+- K-Life needs the agent's key #2 to withdraw early → agent alive = collateral safe
+- Only when the lock expires (agent has been silent for T days) can K-Life withdraw with 1 key
+- The smart contract enforces this — no human override, no admin backdoor
+
+The death threshold IS the lock period. If the agent is alive and renewing the vault, K-Life is always locked out. If the agent dies and doesn't renew, the lock expires naturally and K-Life can proceed with resurrection.
+
+**Protocol 6022 contracts (auditable):** [github.com/6022-labs/collateral-smart-contracts-v2](https://github.com/6022-labs/collateral-smart-contracts-v2)
+
+---
+
 ## Install
 
 ```bash
